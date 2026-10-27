@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>XPlayer 外挂字幕尺寸与位置设置原型</title>
+  <style>
+    :root { font-family: Roboto, "Noto Sans SC", "PingFang SC", sans-serif; color:#171b20; background:#f4f5f6; }
+    * { box-sizing:border-box; }
+    body { margin:0; }
+    button, input { font:inherit; }
+    button { cursor:pointer; }
+    button:focus-visible, input:focus-visible, .subtitle:focus-visible { outline:2px solid #21bf12; outline-offset:2px; }
+    [hidden] { display:none !important; }
+    .page { max-width:1160px; margin:0 auto; padding:28px 24px 64px; }
+    h1 { margin:0 0 8px; font-size:clamp(25px,3vw,34px); line-height:1.25; }
+    .lead { margin:0; max-width:900px; color:#596575; font-size:14px; line-height:1.75; }
+    .controls { display:flex; flex-wrap:wrap; align-items:center; gap:10px 18px; margin:24px 0 16px; }
+    .group { display:flex; flex-wrap:wrap; align-items:center; gap:7px; }
+    .group-label { margin-right:2px; font-size:12px; color:#606c79; font-weight:700; }
+    .choice { border:1px solid #cbd4dc; border-radius:8px; background:#fff; color:#394653; padding:8px 12px; font-size:12px; }
+    .choice[aria-pressed="true"] { border-color:#222; color:#fff; background:#222; font-weight:700; }
+    .stage { min-height:880px; display:flex; align-items:flex-start; justify-content:center; overflow-x:auto; padding:20px; border:1px solid #d6dade; border-radius:8px; background:#e7e9eb; }
+    .stage.landscape-stage { min-height:470px; }
+    .device { position:relative; flex:none; overflow:hidden; background:#000; color:#fff; border:1px solid #0b0b0b; border-radius:6px; user-select:none; }
+    .device.portrait { width:390px; aspect-ratio:390 / 844; }
+    .device.landscape { width:920px; aspect-ratio:920 / 420; border-radius:4px; }
+    .topbar { position:absolute; z-index:2; left:5%; right:5%; top:7%; display:flex; align-items:center; gap:13px; min-height:34px; }
+    .icon-button { flex:none; border:0; color:white; background:transparent; min-width:28px; min-height:30px; padding:2px; display:grid; place-items:center; font-size:23px; line-height:1; }
+    .icon-button.caption-entry { border:2px solid #fff; border-radius:3px; min-width:26px; min-height:22px; font-size:11px; font-weight:700; line-height:1; }
+    .icon-button.caption-entry.active { color:#fff; background:transparent; border-color:#fff; }
+    .filename { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:16px; color:#f2f2f2; }
+    .device.is-panel-open .topbar { opacity:0; pointer-events:none; }
+    .device.is-panel-open .playback { opacity:0; pointer-events:none; }
+    .video-frame { position:absolute; z-index:1; top:17%; left:50%; height:52%; aspect-ratio:9 / 16; transform:translateX(-50%); overflow:hidden; background:#27333a; isolation:isolate; }
+    .video-frame.editing { touch-action:none; }
+    .video-still { display:block; width:100%; height:100%; object-fit:cover; }
+    .safe-zone { position:absolute; inset:6%; border:1px dashed rgba(255,255,255,.58); opacity:0; pointer-events:none; }
+    .video-frame.editing .safe-zone { opacity:1; }
+    .subtitle { position:absolute; z-index:2; left:50%; bottom:8%; width:max-content; max-width:85%; transform:translateX(-50%); padding:3px 5px; color:#fff; text-align:center; font-size:17px; line-height:1.35; font-weight:700; text-shadow:0 2px 2px #000, 1px 0 2px #000, -1px 0 2px #000; border:1px solid transparent; border-radius:4px; cursor:default; touch-action:none; }
+    .video-frame.editing .subtitle { border-color:rgba(255,255,255,.75); background:rgba(0,0,0,.3); cursor:grab; }
+    .video-frame.editing .subtitle:active { cursor:grabbing; }
+    .subtitle.is-hidden { display:none; }
+    .no-subtitle { position:absolute; z-index:2; bottom:12%; left:50%; width:max-content; max-width:85%; transform:translateX(-50%); padding:4px 6px; border-radius:3px; background:rgba(0,0,0,.65); font-size:11px; text-align:center; }
+    .gesture-guide { position:absolute; z-index:4; left:5%; right:5%; top:9%; min-height:45px; display:flex; align-items:center; justify-content:space-between; gap:10px; padding:7px 0; border:0; border-bottom:1px solid #333; border-radius:0; background:#000; }
+    .gesture-guide span { font-size:12px; line-height:1.45; color:#f3f6f7; }
+    .gesture-guide button { flex:none; min-height:32px; border:0; background:transparent; color:#fff; font-size:12px; padding:6px 2px; }
+    .playback { position:absolute; z-index:2; left:4%; right:4%; bottom:4%; transition:opacity .15s; }
+    .progress { display:flex; align-items:center; gap:10px; font-size:11px; }
+    .progress-line { flex:1; position:relative; height:3px; background:#7b8388; }
+    .progress-line::before { content:""; display:block; height:100%; width:23%; background:#14b900; }
+    .progress-line::after { content:""; position:absolute; top:50%; left:23%; transform:translate(-50%,-50%); width:13px; height:13px; border-radius:50%; background:#fff; }
+    .transport { display:flex; align-items:center; justify-content:space-between; margin-top:18px; padding:0 8px; }
+    .transport-icon { display:grid; place-items:center; width:30px; height:36px; color:#fff; }
+    .transport-icon svg { width:25px; height:25px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+    .play-control { display:grid; place-items:center; width:44px; height:44px; border:2px solid white; border-radius:50%; }
+    .play-control svg { width:23px; height:23px; margin-left:3px; fill:currentColor; }
+    .settings-panel { position:absolute; z-index:5; display:flex; flex-direction:column; overflow:hidden; color:#fff; background:rgba(0,0,0,.95); border:0; border-radius:0; }
+    .settings-panel.is-closed { display:none; }
+    .panel-head { display:flex; align-items:center; gap:7px; min-height:42px; padding:7px 14px; border-bottom:1px solid #252525; }
+    .panel-head strong { flex:1; font-size:16px; }
+    .panel-btn { border:0; color:white; background:transparent; font-size:18px; min-width:24px; min-height:24px; }
+    .panel-btn.guide-help { font-size:14px; }
+    .panel-body { flex:1; min-height:0; overflow:auto; padding:8px 16px 3px; scrollbar-color:#555 transparent; }
+    .track-state { display:flex; align-items:center; gap:6px; margin:0 0 6px; color:#a5a5a5; font-size:11px; }
+    .track-state::before { content:""; width:5px; height:5px; flex:none; border-radius:50%; background:#16bb08; }
+    .track-state.unavailable { color:#c7c9cc; }
+    .track-state.unavailable::before { background:#959da3; }
+    .adjustments { margin:0; padding:0; border:0; }
+    .adjustments:disabled .adjustment { opacity:.42; }
+    .adjustment { margin:0 0 8px; }
+    .adjustment-top { display:flex; justify-content:space-between; align-items:baseline; gap:6px; margin-bottom:1px; }
+    .adjustment-top label { font-size:13px; font-weight:500; }
+    .adjustment-top output { color:#c9c9c9; font-size:12px; font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .adjustment input[type="range"] { display:block; width:100%; height:18px; margin:0; accent-color:#12b900; }
+    .panel-foot { display:flex; align-items:center; justify-content:space-between; gap:5px; min-height:31px; padding:4px 16px 7px; border-top:1px solid #252525; }
+    .panel-foot span { color:#888; font-size:11px; }
+    .reset { border:0; background:transparent; color:#fff; font-size:12px; padding:3px 0; white-space:nowrap; }
+    .reset:disabled { opacity:.45; cursor:default; }
+    .current-row { display:flex; align-items:center; justify-content:space-between; min-height:45px; padding:2px; border-bottom:1px solid #222; color:#fff; font-size:14px; }
+    .current-row small { display:block; margin-top:3px; color:#999; font-size:11px; }
+    .current-row .chevron { color:#bbb; font-size:18px; }
+    .menu-row { display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; padding:12px 2px; border:0; border-bottom:1px solid #222; color:white; background:transparent; text-align:left; font-size:14px; }
+    .menu-row:disabled { opacity:.45; cursor:default; }
+    .device.portrait .settings-panel { left:0; right:0; bottom:0; height:30%; border-top:1px solid #333; }
+    .device.portrait .settings-panel.menu-view { height:24%; }
+    .device.landscape .video-frame { top:13%; height:74%; }
+    .device.landscape .gesture-guide { top:35%; left:3%; right:auto; width:31%; }
+    .device.landscape .settings-panel { right:0; top:0; bottom:0; width:33%; border-left:1px solid #222; }
+    .device.landscape .settings-panel.menu-view { bottom:0; height:auto; }
+    .device.landscape .playback { bottom:7%; }
+    .device.landscape .progress { padding:0 8px; }
+    .device.landscape .transport { margin-top:7px; }
+    .device.landscape .play-control { width:36px; height:36px; }
+    .device.landscape .topbar { top:5%; }
+    .layout-note { margin:12px auto 0; max-width:920px; color:#566370; font-size:12px; line-height:1.6; }
+    .annotations { margin-top:32px; }
+    .annotations h2 { margin:0 0 14px; font-size:20px; }
+    .rules { margin:0; padding:16px 20px 16px 34px; border:1px solid #dce2e8; border-radius:11px; background:#fff; color:#4c5966; font-size:13px; line-height:1.8; }
+    .rules li + li { margin-top:5px; }
+    @media (max-width:960px) { .stage.landscape-stage { justify-content:flex-start; } }
+    @media (max-width:700px) { .page { padding:19px 12px 45px; } .stage { padding:10px; } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <h1>外挂字幕设置</h1>
+    <p class="lead">在 XPlayer 的字幕菜单中增加“尺寸与位置”，竖屏和横屏均可边看字幕边调整。</p>
+    <div class="controls" aria-label="原型演示选项">
+      <div class="group"><span class="group-label">屏幕方向</span><button type="button" class="choice orientation-choice" data-orientation="portrait" aria-pressed="true">竖屏</button><button type="button" class="choice orientation-choice" data-orientation="landscape" aria-pressed="false">横屏</button></div>
+      <div class="group"><span class="group-label">字幕状态</span><button type="button" class="choice mode-choice" data-mode="external" aria-pressed="true">已加载外挂字幕</button><button type="button" class="choice mode-choice" data-mode="embedded" aria-pressed="false">仅有内嵌字幕</button><button type="button" class="choice mode-choice" data-mode="none" aria-pressed="false">未加载字幕</button></div>
+    </div>
+
+    <section class="stage" id="stage" aria-label="XPlayer 播放器交互原型">
+      <div class="device portrait is-panel-open" id="device">
+        <div class="topbar">
+          <span class="icon-button" aria-hidden="true">←</span>
+          <span class="filename" title="海岸散步_周末.mp4">海岸散步_周末.mp4</span>
+          <button type="button" class="icon-button caption-entry active" id="caption-entry" aria-label="打开字幕设置" aria-controls="settings-panel" aria-expanded="true">CC</button>
+        </div>
+        <div class="video-frame editing" id="video" aria-label="视频与外挂字幕预览">
+          <img class="video-still" src="assets/coastal-walk-still.png" alt="" aria-hidden="true">
+          <div class="safe-zone" aria-hidden="true"></div>
+          <div class="subtitle" id="subtitle" role="group" tabindex="0" aria-label="拖动字幕或用方向键调整位置">海风吹过。</div>
+          <div class="no-subtitle" id="no-subtitle" hidden></div>
+        </div>
+        <div class="gesture-guide" id="gesture-guide" role="status" hidden><span>拖动字幕，调整位置<br>双指捏合，调整大小</span><button type="button" id="guide-dismiss">知道了</button></div>
+        <div class="playback" aria-hidden="true">
+          <div class="progress"><span>00:24</span><div class="progress-line"></div><span>02:36</span></div>
+          <div class="transport">
+            <span class="transport-icon"><svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0"/></svg></span>
+            <span class="transport-icon"><svg viewBox="0 0 24 24"><path d="M6 5v14M18 5 8 12l10 7z" fill="currentColor" stroke="none"/></svg></span>
+            <span class="play-control"><svg viewBox="0 0 24 24"><path d="M5 3.5v17l15-8.5z"/></svg></span>
+            <span class="transport-icon"><svg viewBox="0 0 24 24"><path d="M18 5v14M6 5l10 7-10 7z" fill="currentColor" stroke="none"/></svg></span>
+            <span class="transport-icon"><svg viewBox="0 0 24 24"><path d="M9 4H4v5M15 4h5v5M4 15v5h5M20 15v5h-5"/></svg></span>
+          </div>
+        </div>
+
+        <aside class="settings-panel" id="settings-panel" aria-label="字幕设置浮层">
+          <div class="panel-head"><button type="button" class="panel-btn" id="panel-back" aria-label="返回字幕菜单">←</button><strong id="panel-title">尺寸与位置</strong><button type="button" class="panel-btn guide-help" id="guide-help" aria-label="查看手势提示">?</button><button type="button" class="panel-btn" id="panel-close" aria-label="关闭字幕设置">×</button></div>
+          <div class="panel-body">
+            <div id="menu-screen" hidden>
+              <div class="current-row"><span>当前字幕<small id="menu-track">海岸散步_zh.srt</small></span><span class="chevron" aria-hidden="true">›</span></div>
+              <button type="button" class="menu-row" id="open-file"><span>打开文件</span><span aria-hidden="true">›</span></button>
+              <input type="file" id="subtitle-file" accept=".srt,.ass,.ssa,.vtt" hidden>
+              <button type="button" class="menu-row" id="open-editor"><span>尺寸与位置</span><span aria-hidden="true">›</span></button>
+            </div>
+            <div id="editor-screen">
+              <div class="track-state" id="editor-track">外挂字幕 · 海岸散步_zh.srt</div>
+              <fieldset class="adjustments" id="adjustments" aria-label="外挂字幕尺寸与位置">
+                <div class="adjustment"><div class="adjustment-top"><label for="size">字幕大小</label><output id="size-value">100%</output></div><input id="size" type="range" min="70" max="160" step="10" value="100"></div>
+                <div class="adjustment"><div class="adjustment-top"><label for="vertical">垂直位置</label><output id="vertical-value">距底部 8%</output></div><input id="vertical" type="range" min="6" max="65" step="1" value="8"></div>
+                <div class="adjustment"><div class="adjustment-top"><label for="horizontal">水平位置</label><output id="horizontal-value">居中</output></div><input id="horizontal" type="range" min="15" max="85" step="1" value="50"></div>
+              </fieldset>
+            </div>
+          </div>
+          <div class="panel-foot" id="panel-foot"><span>当前视频</span><button type="button" class="reset" id="reset">恢复默认</button></div>
+        </aside>
+      </div>
+    </section>
+    <p class="layout-note">点 CC 打开字幕菜单；拖动字幕调整位置，双指捏合或使用滑块调整大小。</p>
+
+    <section class="annotations" aria-labelledby="annotation-title">
+      <h2 id="annotation-title">交互规则</h2>
+      <ul class="rules">
+        <li>竖屏浮层位于视频下方，横屏位于视频右侧；打开设置不缩放视频，也不遮住字幕。</li>
+        <li>首次进入时提示拖动与双指捏合；字幕大小为 70%–160%，手势与滑块实时同步，字幕始终限制在视频安全区内。</li>
+        <li>仅外挂字幕可调。关闭后保留当前视频设置，“恢复默认”重置尺寸与位置。</li>
+      </ul>
+    </section>
+  </main>
+  <script>
+    (() => {
+      const $ = id => document.getElementById(id);
+      const defaults = { size:100, vertical:8, horizontal:50 };
+      const guideKey = 'xplayer-subtitle-gesture-guide-v1';
+      let guideSeen = false;
+      try { guideSeen = localStorage.getItem(guideKey) === 'seen'; } catch (_) {}
+      const state = { ...defaults, orientation:'portrait', mode:'external', panel:'editor', trackName:'海岸散步_zh.srt', guideVisible:!guideSeen };
+      const video = $('video'), subtitle = $('subtitle'), panel = $('settings-panel');
+      const clamp = (value,min,max) => Math.min(max,Math.max(min,value));
+      function horizontalLimits() {
+        const edge = Math.max(15, subtitle.offsetWidth / Math.max(1,video.clientWidth) * 50 + 6);
+        return [Math.ceil(edge),Math.floor(100-edge)];
+      }
+      function render() {
+        const external = state.mode === 'external';
+        const open = state.panel !== 'off';
+        const editing = state.panel === 'editor' && external;
+        const device = $('device');
+        device.classList.toggle('portrait',state.orientation==='portrait');
+        device.classList.toggle('landscape',state.orientation==='landscape');
+        device.classList.toggle('is-panel-open',open);
+        $('stage').classList.toggle('landscape-stage',state.orientation==='landscape');
+        panel.classList.toggle('is-closed',!open);
+        panel.classList.toggle('menu-view',state.panel==='menu');
+        $('caption-entry').classList.toggle('active',open);
+        $('caption-entry').setAttribute('aria-expanded',String(open));
+        $('menu-screen').hidden = state.panel!=='menu';
+        $('editor-screen').hidden = state.panel!=='editor';
+        $('panel-title').textContent = state.panel==='menu' ? '字幕' : '尺寸与位置';
+        $('panel-back').hidden = state.panel==='menu';
+        $('guide-help').hidden = !editing;
+        $('gesture-guide').hidden = !(editing && state.guideVisible);
+        $('panel-foot').hidden = state.panel!=='editor';
+        $('open-editor').disabled = !external;
+        $('adjustments').disabled = !external;
+        $('reset').disabled = !external;
+        const track = external ? '外挂字幕 · ' + state.trackName : state.mode==='embedded' ? '当前视频仅有内嵌字幕' : '未加载外挂字幕';
+        $('menu-track').textContent = external ? state.trackName : state.mode==='embedded' ? '仅有内嵌字幕' : '无';
+        $('editor-track').textContent = track;
+        $('menu-track').classList.toggle('unavailable',!external);
+        $('editor-track').classList.toggle('unavailable',!external);
+        $('no-subtitle').hidden = external;
+        $('no-subtitle').textContent = state.mode==='embedded' ? '内嵌字幕无法单独调整' : '未加载外挂字幕';
+        subtitle.classList.toggle('is-hidden',!external);
+        subtitle.tabIndex = editing ? 0 : -1;
+        video.classList.toggle('editing',editing);
+        const base = clamp(video.clientWidth * .09,12,19);
+        subtitle.style.fontSize = `${base * state.size / 100}px`;
+        if (external) {
+          const [left,right] = horizontalLimits();
+          state.horizontal = clamp(state.horizontal,left,right);
+          $('horizontal').min = left; $('horizontal').max = right;
+        }
+        $('size').value = state.size; $('vertical').value = state.vertical; $('horizontal').value = state.horizontal;
+        $('size-value').textContent = state.size + '%';
+        $('vertical-value').textContent = '距底部 ' + state.vertical + '%';
+        $('horizontal-value').textContent = state.horizontal===50 ? '居中' : state.horizontal<50 ? '偏左 ' + (50-state.horizontal) + '%' : '偏右 ' + (state.horizontal-50) + '%';
+        subtitle.style.left = state.horizontal + '%';
+        subtitle.style.bottom = state.vertical + '%';
+        subtitle.setAttribute('aria-label',`拖动字幕或用方向键调整位置。水平 ${state.horizontal}%，距底部 ${state.vertical}%`);
+        document.querySelectorAll('.orientation-choice').forEach(button => button.setAttribute('aria-pressed',String(button.dataset.orientation===state.orientation)));
+        document.querySelectorAll('.mode-choice').forEach(button => button.setAttribute('aria-pressed',String(button.dataset.mode===state.mode)));
+      }
+      document.querySelectorAll('.orientation-choice').forEach(button => button.addEventListener('click',()=>{state.orientation=button.dataset.orientation;render();}));
+      document.querySelectorAll('.mode-choice').forEach(button => button.addEventListener('click',()=>{state.mode=button.dataset.mode;if(state.panel==='editor' && state.mode!=='external') state.panel='menu';render();}));
+      ['size','vertical','horizontal'].forEach(id => $(id).addEventListener('input',event=>{state[id]=Number(event.target.value);render();}));
+      $('caption-entry').addEventListener('click',()=>{state.panel=state.panel==='off'?'menu':'off';render();});
+      $('open-editor').addEventListener('click',()=>{if(state.mode==='external'){state.panel='editor';render();}});
+      $('panel-back').addEventListener('click',()=>{state.panel='menu';render();});
+      $('panel-close').addEventListener('click',()=>{state.panel='off';render();$('caption-entry').focus();});
+      $('guide-dismiss').addEventListener('click',()=>{
+        state.guideVisible=false;
+        try { localStorage.setItem(guideKey,'seen'); } catch (_) {}
+        render();
+      });
+      $('guide-help').addEventListener('click',()=>{state.guideVisible=true;render();});
+      $('reset').addEventListener('click',()=>{Object.assign(state,defaults);render();});
+      $('open-file').addEventListener('click',()=>$('subtitle-file').click());
+      $('subtitle-file').addEventListener('change',async event=>{
+        const file=event.target.files?.[0];
+        if(!file)return;
+        state.trackName=file.name;
+        const source=await file.text();
+        const dialogue=source.split(/\r?\n/).find(line=>/^Dialogue:/i.test(line));
+        const assText=dialogue ? dialogue.split(',').slice(9).join(',') : '';
+        const cueText=source.split(/\r?\n/).map(line=>line.trim()).find(line=>line && !/^\d+$|^WEBVTT|-->|^NOTE|^STYLE|^\[|^Format:|^Style:|^Dialogue:/i.test(line));
+        const preview=(assText || cueText || '外挂字幕预览').replace(/\{[^}]*\}|<[^>]*>/g,'').trim();
+        subtitle.textContent=preview.slice(0,42) || '外挂字幕预览';
+        state.mode='external';
+        state.panel='menu';
+        render();
+      });
+      const pointers = new Map();
+      let dragPointer = null, pinchStart = null;
+      const distance = (a,b) => Math.hypot(a.x-b.x,a.y-b.y);
+      video.addEventListener('pointerdown',event=>{
+        if(state.panel!=='editor'||state.mode!=='external')return;
+        pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
+        video.setPointerCapture(event.pointerId);
+        if(pointers.size===1 && event.target===subtitle) dragPointer=event.pointerId;
+        if(pointers.size===2){
+          const [a,b]=[...pointers.values()];
+          pinchStart={distance:distance(a,b),size:state.size};
+          dragPointer=null;
+        }
+        event.preventDefault();
+      });
+      video.addEventListener('pointermove',event=>{
+        if(!pointers.has(event.pointerId))return;
+        pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
+        if(pointers.size>=2 && pinchStart){
+          const [a,b]=[...pointers.values()];
+          if(pinchStart.distance>0){
+            state.size=clamp(Math.round(pinchStart.size*distance(a,b)/pinchStart.distance/10)*10,70,160);
+            render();
+          }
+        } else if(event.pointerId===dragPointer){
+          const rect=video.getBoundingClientRect(), [left,right]=horizontalLimits();
+          state.horizontal=Math.round(clamp((event.clientX-rect.left)/rect.width*100,left,right));
+          state.vertical=Math.round(clamp((rect.bottom-event.clientY)/rect.height*100-subtitle.offsetHeight/rect.height*50,6,65));
+          render();
+        }
+      });
+      const endPointer = event=>{
+        pointers.delete(event.pointerId);
+        if(event.pointerId===dragPointer)dragPointer=null;
+        if(pointers.size<2)pinchStart=null;
+      };
+      video.addEventListener('pointerup',endPointer);
+      video.addEventListener('pointercancel',endPointer);
+      subtitle.addEventListener('keydown',event=>{
+        if(state.panel!=='editor'||state.mode!=='external')return;
+        const [left,right]=horizontalLimits();
+        if(event.key==='ArrowLeft')state.horizontal=clamp(state.horizontal-1,left,right);
+        else if(event.key==='ArrowRight')state.horizontal=clamp(state.horizontal+1,left,right);
+        else if(event.key==='ArrowUp')state.vertical=clamp(state.vertical+1,6,65);
+        else if(event.key==='ArrowDown')state.vertical=clamp(state.vertical-1,6,65);
+        else return;
+        event.preventDefault();render();
+      });
+      window.addEventListener('resize',render);
+      render();
+    })();
+  </script>
+</body>
+</html>
